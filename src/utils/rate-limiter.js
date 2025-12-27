@@ -10,9 +10,10 @@ export const create_rate_limiter = (delay_ms = 50) => {
 		const now = Date.now()
 		const time_since_last = now - last_request
 
-		if (time_since_last < delay_ms) {
-			await new Promise(resolve => setTimeout(resolve, delay_ms - time_since_last))
-		}
+		if (time_since_last < delay_ms)
+			await new Promise(resolve => {
+				setTimeout(resolve, delay_ms - time_since_last)
+			})
 
 		last_request = Date.now()
 		return fn()

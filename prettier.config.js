@@ -3,8 +3,8 @@ export default {
 	tabWidth: 2,
 	semi: false,
 	singleQuote: true,
-	trailingComma: 'es5',
+	trailingComma: 'none',
 	printWidth: 100,
-	arrowParens: 'avoid',
+	arrowParens: 'avoid'
 }
 

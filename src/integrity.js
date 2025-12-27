@@ -1,5 +1,9 @@
+/** @typedef {import('./types.js').IntegrityData} IntegrityData */
+/** @typedef {import('./types.js').IntegrityCheckResult} IntegrityCheckResult */
+/** @typedef {import('./types.js').LineTypeIntelligence} LineTypeIntelligence */
+
 import twilio from 'twilio'
-import { db, auth } from '#utils/firebase.js'
+import { auth } from '#utils/firebase.js'
 import { create_rate_limiter } from '#utils/rate-limiter.js'
 
 const client = new twilio(
@@ -30,6 +34,11 @@ const blacklisted_carriers = [
   'Twilio - SMS/MMS-SVR'
 ]
 
+/**
+ * Validates phone integrity based on line type intelligence
+ * @param {IntegrityData} integrity_data - Integrity data containing line type intelligence
+ * @returns {boolean} Whether the phone is valid (mobile and not VoIP)
+ */
 export const validate_phone_integrity = integrity_data => {
   if (!integrity_data?.line_type_intelligence) return false
 
@@ -43,58 +52,54 @@ export const validate_phone_integrity = integrity_data => {
   return true
 }
 
+/**
+ * Checks phone integrity for all authenticated users
+ * @returns {Promise<IntegrityCheckResult[]>} Array of integrity check results
+ */
 export const check_integrity = async () => {
-  console.info('Starting integrity check...')
-
-  const users_snapshot = await db.collection('users').get()
-
   const limited_request = create_rate_limiter() // 50ms delay
   const output = []
 
-  for (const user_doc of users_snapshot.docs) {
-    const user = { id: user_doc.id, ...user_doc.data() }
+  let page_token
+  do {
+    const list_result = await auth.listUsers(1000, page_token)
 
-    if (!user.phone) continue
+    for (const user of list_result.users) {
+      if (!user.phoneNumber) continue
 
-    const phone_doc = await db.collection('phone_numbers').doc(user.phone).get()
+      const existing_claims = user.customClaims || {}
+      let intelligence
 
-    let integrity_data
-    let intelligence
+      if (existing_claims.phone_type && existing_claims.carrier_name) {
+        intelligence = {
+          type: existing_claims.phone_type,
+          carrier_name: existing_claims.carrier_name
+        }
+      } else {
+        const result = await limited_request(() =>
+          client.lookups.v2.phoneNumbers(user.phoneNumber).fetch({
+            fields: ['line_type_intelligence']
+          })
+        )
 
-    if (phone_doc.exists) {
-      integrity_data = phone_doc.data()
-      intelligence = {
-        type: integrity_data.type,
-        carrier_name: integrity_data.carrier_name
+        intelligence = result.lineTypeIntelligence
       }
-    } else {
-      const result = await limited_request(() =>
-        client.lookups.v2.phoneNumbers(user.phone).fetch({
-          fields: ['line_type_intelligence']
-        })
-      )
 
-      intelligence = result.lineTypeIntelligence
+      const is_valid = validate_phone_integrity({ line_type_intelligence: intelligence })
 
-      integrity_data = {
-        type: intelligence?.type || 'unknown',
+      await auth.setCustomUserClaims(user.uid, {
+        ...existing_claims,
+        phone_type: intelligence?.type || 'unknown',
         carrier_name: intelligence?.carrier_name || 'unknown',
-        country_code: intelligence?.mobile_country_code || 'unknown',
-        network_code: intelligence?.mobile_network_code || 'unknown',
-        checked_at: new Date().toISOString()
-      }
+        phone_verified: is_valid,
+        is_voip: !is_valid
+      })
 
-      await db.collection('phone_numbers').doc(user.phone).set(integrity_data)
+      output.push({ user_id: user.uid, phone: user.phoneNumber, valid: is_valid })
     }
 
-    const is_valid = validate_phone_integrity({ line_type_intelligence: intelligence })
+    page_token = list_result.pageToken
+  } while (page_token)
 
-    await auth.setCustomUserClaims(user.id, {
-      phone_verified: is_valid,
-      is_voip: !is_valid
-    })
-
-    output.push({ user_id: user.id, phone: user.phone, valid: is_valid })
-  }
   return output
 }

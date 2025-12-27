@@ -2,9 +2,7 @@ import { onCall, onRequest } from 'firebase-functions/v2/https'
 import { onSchedule } from 'firebase-functions/v2/scheduler'
 import { check_integrity } from './integrity.js'
 
-export const health_check = onCall(async request => {
-	return { status: 'ok', timestamp: Date.now() }
-})
+export const health_check = onCall(() => ({ status: 'ok', timestamp: Date.now() }))
 
 export const integrity_check = onRequest(async (req, res) => {
 	const result = await check_integrity()

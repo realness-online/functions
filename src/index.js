@@ -12,4 +12,3 @@ export const integrity_check = onRequest(async (req, res) => {
 export const scheduled_integrity_check = onSchedule('every 24 hours', async () => {
 	await check_integrity()
 })
-

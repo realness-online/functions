@@ -7,4 +7,3 @@ export default {
 	printWidth: 100,
 	arrowParens: 'avoid'
 }
-

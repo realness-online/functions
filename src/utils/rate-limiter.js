@@ -15,8 +15,8 @@ export const create_rate_limiter = (delay_ms = 50) => {
 				setTimeout(resolve, delay_ms - time_since_last)
 			})
 
+		const result = await fn()
 		last_request = Date.now()
-		return fn()
+		return result
 	}
 }
-
